@@ -12,6 +12,21 @@ import SecretsListPage from './pages/dashboard/SecretsListPage';
 import InviteUserPage from './pages/dashboard/InviteUserPage';
 import ErrorPage from './pages/ErrorPage';
 import { AuthProvider } from './hooks/auth/use-auth-context';
+import DashboardLayout from './components/layout/DashboardLayout';
+
+// Wrap component with layout
+const withDashboard = (Component) => {
+  const WrappedComponent = (props) => (
+    <DashboardLayout>
+      <Component {...props} />
+    </DashboardLayout>
+  );
+
+  // Set display name for the wrapped component
+  WrappedComponent.displayName = `withDashboard(${Component.displayName || Component.name || 'Component'})`;
+  
+  return WrappedComponent;
+};
 
 function AppRoutes() {
   const { checkOwnerExists, isLoading: ownerCheckLoading } = useOwnerCheck();
@@ -39,9 +54,6 @@ function AppRoutes() {
       </div>
     );
   }
-
-  // Debug logging
-  console.log('Auth state:', { isAuthenticated, ownerExists });
 
   return (
     <Routes>
@@ -72,7 +84,6 @@ function AppRoutes() {
           )
         }
       />
-
       <Route
         path="/setup"
         element={
@@ -83,26 +94,24 @@ function AppRoutes() {
           )
         }
       />
-
       <Route path="/invite/:token" element={<InvitePage />} />
 
-      {/* Protected Routes */}
+      {/* Protected Routes - with Dashboard Layout */}
       <Route
         path="/secrets"
         element={
           isAuthenticated ? (
-            <SecretsListPage />
+            withDashboard(SecretsListPage)()
           ) : (
             <Navigate to="/login" replace />
           )
         }
       />
-
       <Route
         path="/invite-user"
         element={
           isAuthenticated ? (
-            <InviteUserPage />
+            withDashboard(InviteUserPage)()
           ) : (
             <Navigate to="/login" replace />
           )
