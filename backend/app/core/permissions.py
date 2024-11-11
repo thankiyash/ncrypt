@@ -2,6 +2,7 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from app.models.core import User, Secret
+from typing import List
 
 def can_manage_secret(db: Session, user_id: int, secret_id: int) -> bool:
     """
@@ -40,4 +41,27 @@ def get_manageable_secrets(db: Session, user_id: int):
     return db.query(Secret).join(User).filter(
         (Secret.created_by_user_id == user_id) |
         (User.role_level < current_user.role_level)
+    ).all()
+
+# backend/app/core/permissions.py
+
+def can_manage_user(manager: User, target_user: User) -> bool:
+    """
+    Check if a user can manage another user.
+    Rules:
+    1. User cannot manage themselves
+    2. User can only manage users with lower role levels
+    """
+    if manager.id == target_user.id:
+        return False
+        
+    return manager.role_level > target_user.role_level
+
+def get_manageable_users(db: Session, current_user: User) -> List[User]:
+    """
+    Get all users that the current user can manage
+    """
+    return db.query(User).filter(
+        User.role_level < current_user.role_level,
+        User.id != current_user.id
     ).all()

@@ -8,7 +8,10 @@ from app.schemas.core import (
     UserCreate, 
     UserInvite, 
     UserRegisterResponse, 
-    AcceptInvite
+    AcceptInvite,
+    UserInDB,
+    UserUpdate,
+
 )
 from app.core.roles import (
     RoleLevel,
@@ -16,7 +19,7 @@ from app.core.roles import (
     can_manage_role
 )
 from datetime import datetime, timedelta
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 router = APIRouter()
 
@@ -196,3 +199,140 @@ def check_owner_exists(db: Session = Depends(get_db)):
         "owner_exists": owner is not None,
         "setup_required": owner is None
     }
+
+@router.get("/team-members", response_model=List[UserInDB])
+def get_team_members(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> List[User]:
+    """
+    Get all team members that the current user has permission to view.
+    Higher role levels can see users with lower role levels.
+    """
+    try:
+        # Get all users with lower or equal role level
+        users = db.query(User).filter(
+            User.role_level <= current_user.role_level,
+            User.is_active == True  # Only get active users
+        ).all()
+        
+        return users
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch team members: {str(e)}"
+        )
+
+@router.get("/team-members/{user_id}", response_model=UserInDB)
+def get_team_member(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get details of a specific team member
+    """
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=404,
+                detail="User not found"
+            )
+            
+        # Check if current user has permission to view this user
+        if user.role_level > current_user.role_level:
+            raise HTTPException(
+                status_code=403,
+                detail="You don't have permission to view this user"
+            )
+            
+        return user
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch team member: {str(e)}"
+        )
+
+@router.put("/team-members/{user_id}", response_model=UserInDB)
+def update_team_member(
+    user_id: int,
+    user_update: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update a team member's information.
+    Only users with higher role levels can update lower role level users.
+    """
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=404,
+                detail="User not found"
+            )
+            
+        # Check if current user has permission to update this user
+        if user.role_level >= current_user.role_level:
+            raise HTTPException(
+                status_code=403,
+                detail="You don't have permission to update this user"
+            )
+            
+        # Update allowed fields
+        if user_update.first_name is not None:
+            user.first_name = user_update.first_name
+        if user_update.last_name is not None:
+            user.last_name = user_update.last_name
+            
+        db.commit()
+        db.refresh(user)
+        return user
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update team member: {str(e)}"
+        )
+
+@router.delete("/team-members/{user_id}", status_code=204)
+def delete_team_member(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Deactivate a team member.
+    Only users with higher role levels can deactivate lower role level users.
+    """
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=404,
+                detail="User not found"
+            )
+            
+        # Check if current user has permission to delete this user
+        if user.role_level >= current_user.role_level:
+            raise HTTPException(
+                status_code=403,
+                detail="You don't have permission to deactivate this user"
+            )
+            
+        # Soft delete by setting is_active to False
+        user.is_active = False
+        db.commit()
+        
+        return None
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to deactivate team member: {str(e)}"
+        )
