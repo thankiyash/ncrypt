@@ -13,6 +13,7 @@ import InviteUserPage from './pages/dashboard/InviteUserPage';
 import ErrorPage from './pages/ErrorPage';
 import { AuthProvider } from './hooks/auth/use-auth-context';
 import DashboardLayout from './components/layout/DashboardLayout';
+import AcceptInvitePage from './pages/auth/AcceptInvitePage';
 
 // Wrap component with layout
 const withDashboard = (Component) => {
@@ -94,7 +95,19 @@ function AppRoutes() {
           )
         }
       />
+      
+      {/* Invite Routes */}
       <Route path="/invite/:token" element={<InvitePage />} />
+      <Route
+        path="/accept-invite/:token"
+        element={
+          isAuthenticated ? (
+            <Navigate to="/secrets" replace />
+          ) : (
+            <AcceptInvitePage />
+          )
+        }
+      />
 
       {/* Protected Routes - with Dashboard Layout */}
       <Route

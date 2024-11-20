@@ -21,6 +21,44 @@ export function useTeamMembers() {
     }
   };
 
+  const getPendingInvites = async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await apiRequest(API_ROUTES.PENDING_INVITES);
+      return response;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const inviteTeamMember = async (data) => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await apiRequest(API_ROUTES.INVITE_MEMBER, {
+        method: 'POST',
+        body: JSON.stringify({
+          email: data.email,
+          first_name: data.first_name,
+          last_name: data.last_name,
+          role_level: data.role_level
+        })
+      });
+      return response;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const getTeamMember = async (id) => {
     setIsLoading(true);
     setError(null);
@@ -43,7 +81,7 @@ export function useTeamMembers() {
     try {
       const response = await apiRequest(API_ROUTES.TEAM_MEMBER(id), {
         method: 'PUT',
-        body: JSON.stringify(data),
+        body: JSON.stringify(data)
       });
       return response;
     } catch (err) {
@@ -60,7 +98,7 @@ export function useTeamMembers() {
 
     try {
       await apiRequest(API_ROUTES.TEAM_MEMBER(id), {
-        method: 'DELETE',
+        method: 'DELETE'
       });
     } catch (err) {
       setError(err.message);
@@ -73,6 +111,8 @@ export function useTeamMembers() {
   return {
     getTeamMembers,
     getTeamMember,
+    getPendingInvites,
+    inviteTeamMember,
     updateTeamMember,
     deleteTeamMember,
     isLoading,

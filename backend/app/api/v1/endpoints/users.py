@@ -20,6 +20,8 @@ from app.core.roles import (
 )
 from datetime import datetime, timedelta
 from typing import Dict, Any, List
+from datetime import datetime, timezone
+
 
 router = APIRouter()
 
@@ -64,7 +66,7 @@ def invite_user(
     invite: UserInvite,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
-) -> Dict[str, Any]:
+) -> dict:
     """
     Invite a new user to the system.
     Returns the invitation token directly (for testing purposes).
@@ -88,12 +90,16 @@ def invite_user(
     expires_at = datetime.utcnow() + timedelta(hours=48)
     
     # Create inactive user with invitation token
+    # Set a temporary password hash that will be updated when the user accepts the invite
+    temp_password_hash = get_password_hash(token)  # Use the token itself as a temporary password
+    
     new_user = User(
         email=invite.email,
         first_name=invite.first_name,
         last_name=invite.last_name,
         role_level=invite.role_level,
         is_active=False,
+        hashed_password=temp_password_hash,  # Set temporary password hash
         invitation_token=token,
         invitation_expires_at=expires_at,
         invited_by_id=current_user.id
@@ -135,13 +141,15 @@ def accept_invitation(
             detail="Invalid invitation token"
         )
     
-    if user.invitation_expires_at < datetime.utcnow():
+    # Use timezone-aware UTC datetime for comparison
+    current_time = datetime.now(timezone.utc)
+    if user.invitation_expires_at < current_time:
         raise HTTPException(
             status_code=400,
             detail="Invitation has expired"
         )
     
-    # Activate user and set password
+    # Update user with new password and activate account
     user.is_active = True
     user.hashed_password = get_password_hash(accept_data.password)
     user.invitation_token = None
@@ -156,7 +164,6 @@ def accept_invitation(
         role_level=user.role_level,
         message="Account activated successfully"
     )
-
 # Utility endpoint for testing - list all pending invitations
 @router.get("/pending-invites")
 def list_pending_invites(
@@ -168,7 +175,6 @@ def list_pending_invites(
     Only shows invitations created by the current user
     """
     pending = db.query(User).filter(
-        User.invited_by_id == current_user.id,
         User.is_active == False,
         User.invitation_token.isnot(None)
     ).all()

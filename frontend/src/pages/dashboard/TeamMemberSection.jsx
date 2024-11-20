@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useTeamMembers } from '@/hooks/auth/use-team-member';
+import PropTypes from 'prop-types';
+import { useTeamMembers } from '@/hooks/auth/use-team-members';
 import {
   Card,
   CardContent,
@@ -20,9 +21,12 @@ import {
 } from "@/components/ui/badge";
 import {
   Users2Icon,
-  Loader2Icon
+  Loader2Icon,
+  Clock,
+  AlertCircle
 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { isPast } from 'date-fns';
 
 const getRoleBadgeVariant = (roleLevel) => {
   switch (roleLevel) {
@@ -50,24 +54,92 @@ const getRoleName = (roleLevel) => {
   }
 };
 
-export default function TeamMembersSection() {
-  const { getTeamMembers, isLoading, error } = useTeamMembers();
+const MemberStatus = ({ member }) => {
+  if (member.is_active) {
+    return (
+      <Badge variant="default" className="bg-green-500">
+        Active
+      </Badge>
+    );
+  }
+  
+  if (member.invitation_expires_at) {
+    const expiryDate = new Date(member.invitation_expires_at);
+    const isExpired = isPast(expiryDate);
+    
+    if (isExpired) {
+      return (
+        <Badge variant="destructive" className="flex items-center gap-1">
+          <AlertCircle className="h-3 w-3" />
+          Expired
+        </Badge>
+      );
+    }
+    
+    return (
+      <Badge variant="secondary" className="flex items-center gap-1">
+        <Clock className="h-3 w-3" />
+        Invited
+      </Badge>
+    );
+  }
+  
+  return (
+    <Badge variant="secondary">
+      Inactive
+    </Badge>
+  );
+};
+
+// Add prop-types for MemberStatus
+MemberStatus.propTypes = {
+  member: PropTypes.shape({
+    is_active: PropTypes.bool,
+    invitation_expires_at: PropTypes.string
+  }).isRequired
+};
+
+export default function TeamMembersSection({ onUpdate }) {
+  const { getTeamMembers, getPendingInvites, isLoading, error } = useTeamMembers();
   const [members, setMembers] = useState([]);
 
+  const loadAllMembers = async () => {
+    try {
+      const [activeMembers, invitedMembers] = await Promise.all([
+        getTeamMembers(),
+        getPendingInvites()
+      ]);
+      
+      // Combine active members and pending invites
+      const allMembers = [
+        ...activeMembers,
+        ...invitedMembers.pending_invites.map(invite => ({
+          ...invite,
+          is_active: false,
+        }))
+      ];
+      
+      // Sort by role level and then by name
+      const sortedMembers = allMembers.sort((a, b) => {
+        if (b.role_level !== a.role_level) return b.role_level - a.role_level;
+        return `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`);
+      });
+      
+      setMembers(sortedMembers);
+      if (onUpdate) onUpdate(sortedMembers);
+    } catch (err) {
+      console.error('Failed to load team members:', err);
+    }
+  };
+
   useEffect(() => {
-    const loadMembers = async () => {
-      try {
-        const data = await getTeamMembers();
-        setMembers(data);
-      } catch (err) {
-        console.error('Failed to load team members:', err);
-      }
-    };
-    
-    loadMembers();
+    loadAllMembers();
+    // Set up periodic refresh every 30 seconds
+    const interval = setInterval(loadAllMembers, 30000);
+    return () => clearInterval(interval);
   }, []);
 
-  if (isLoading) {
+  if (isLoading && members.length === 0) {
     return (
       <Card>
         <CardContent className="flex items-center justify-center p-6">
@@ -77,6 +149,9 @@ export default function TeamMembersSection() {
       </Card>
     );
   }
+
+  const activeCount = members.filter(m => m.is_active).length;
+  const pendingCount = members.filter(m => !m.is_active).length;
 
   return (
     <Card>
@@ -89,9 +164,16 @@ export default function TeamMembersSection() {
               <CardDescription>Manage your team members and their access levels</CardDescription>
             </div>
           </div>
-          <Badge variant="outline" className="ml-auto">
-            {members.length} {members.length === 1 ? 'Member' : 'Members'}
-          </Badge>
+          <div className="flex gap-2">
+            <Badge variant="default" className="bg-green-500">
+              {activeCount} Active
+            </Badge>
+            {pendingCount > 0 && (
+              <Badge variant="secondary">
+                {pendingCount} Pending
+              </Badge>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -112,7 +194,7 @@ export default function TeamMembersSection() {
           </TableHeader>
           <TableBody>
             {members.map((member) => (
-              <TableRow key={member.id}>
+              <TableRow key={member.id || member.email}>
                 <TableCell className="font-medium">
                   {member.first_name} {member.last_name}
                 </TableCell>
@@ -123,18 +205,13 @@ export default function TeamMembersSection() {
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <Badge 
-                    variant={member.is_active ? "default" : "secondary"}
-                    className={member.is_active ? "bg-green-500" : ""}
-                  >
-                    {member.is_active ? "Active" : "Inactive"}
-                  </Badge>
+                  <MemberStatus member={member} />
                 </TableCell>
               </TableRow>
             ))}
             {members.length === 0 && !isLoading && (
               <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground py-6">
+                <TableCell colSpan={6} className="text-center text-muted-foreground py-6">
                   No team members found
                 </TableCell>
               </TableRow>
@@ -145,3 +222,7 @@ export default function TeamMembersSection() {
     </Card>
   );
 }
+
+TeamMembersSection.propTypes = {
+  onUpdate: PropTypes.func
+};
