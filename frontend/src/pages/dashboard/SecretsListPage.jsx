@@ -30,14 +30,19 @@ import {
   EyeOffIcon, 
   CopyIcon, 
   CheckIcon,
-  Trash2Icon
+  Trash2Icon,
+  Share2Icon,
+  Loader2Icon
 } from "lucide-react";
-import { useSecrets } from "@/hooks/auth";
+import { useAuth, useSecrets } from "@/hooks/auth";
+import ShareSecretDialog from "@/components/ShareSecretDialog";
 
-function SecretViewDialog({ secret, open, onOpenChange, onDelete }) {
+function SecretViewDialog({ secret, open, onOpenChange, onDelete, onShare }) {
   const [showPassword, setShowPassword] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const { user } = useAuth();
 
   const togglePasswordVisibility = () => {
     setShowPassword(!showPassword);
@@ -58,6 +63,8 @@ function SecretViewDialog({ secret, open, onOpenChange, onDelete }) {
     setShowDeleteConfirm(false);
     onOpenChange(false);
   };
+
+  const canShare = user ;
 
   return (
     <>
@@ -114,11 +121,29 @@ function SecretViewDialog({ secret, open, onOpenChange, onDelete }) {
               Last updated: {new Date(secret.updated_at || secret.created_at).toLocaleDateString()}
             </div>
 
-            <DialogFooter>
+            {secret.is_shared && (
+              <div className="text-sm text-muted-foreground bg-secondary/50 p-2 rounded">
+                {secret.share_with_all ? (
+                  <span>Shared with all team members</span>
+                ) : (
+                  <span>Shared with {secret.shares?.length || 0} team members</span>
+                )}
+              </div>
+            )}
+
+            <DialogFooter className="flex justify-between">
+              {canShare && (
+                <Button
+                  variant="outline"
+                  onClick={() => setShowShareDialog(true)}
+                >
+                  <Share2Icon className="h-4 w-4 mr-2" />
+                  Share
+                </Button>
+              )}
               <Button
                 variant="destructive"
                 onClick={() => setShowDeleteConfirm(true)}
-                className="w-full sm:w-auto"
               >
                 <Trash2Icon className="h-4 w-4 mr-2" />
                 Delete Secret
@@ -127,6 +152,14 @@ function SecretViewDialog({ secret, open, onOpenChange, onDelete }) {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ShareSecretDialog
+        secret={secret}
+        isOpen={showShareDialog}
+        onOpenChange={setShowShareDialog}
+        onShare={onShare}
+        currentUserRoleLevel={user?.role_level}
+      />
 
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <AlertDialogContent>
@@ -158,16 +191,27 @@ SecretViewDialog.propTypes = {
     description: PropTypes.string,
     password: PropTypes.string.isRequired,
     created_at: PropTypes.string.isRequired,
-    updated_at: PropTypes.string
+    updated_at: PropTypes.string,
+    created_by_user_id: PropTypes.number.isRequired,
+    is_shared: PropTypes.bool,
+    share_with_all: PropTypes.bool,
+    shares: PropTypes.arrayOf(PropTypes.shape({
+      id: PropTypes.number.isRequired,
+      shared_with_user_id: PropTypes.number.isRequired,
+      shared_with_user_email: PropTypes.string.isRequired
+    }))
   }).isRequired,
   open: PropTypes.bool.isRequired,
   onOpenChange: PropTypes.func.isRequired,
-  onDelete: PropTypes.func.isRequired
+  onDelete: PropTypes.func.isRequired,
+  onShare: PropTypes.func.isRequired
 };
 
 export default function SecretsListPage() {
-  const { createSecret, getSecrets, deleteSecret, isLoading, error } = useSecrets();
+  const { createSecret, getSecrets, getSharedSecrets, deleteSecret, shareSecret } = useSecrets();
   const [secrets, setSecrets] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [newSecret, setNewSecret] = useState({
     title: '',
     password: '',
@@ -177,18 +221,35 @@ export default function SecretsListPage() {
   const [selectedSecret, setSelectedSecret] = useState(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
 
+  const loadSecrets = async () => {
+    setIsLoading(true);
+    try {
+      const [ownedSecrets, sharedSecrets] = await Promise.all([
+        getSecrets(),
+        getSharedSecrets()
+      ]);
+
+      const combinedSecrets = [...ownedSecrets, ...sharedSecrets];
+      const uniqueSecrets = Array.from(
+        new Map(combinedSecrets.map(secret => [secret.id, secret])).values()
+      );
+      
+      const sortedSecrets = uniqueSecrets.sort((a, b) => 
+        new Date(b.created_at) - new Date(a.created_at)
+      );
+
+      setSecrets(sortedSecrets);
+    } catch (err) {
+      console.error('Failed to load secrets:', err);
+      setError('Failed to load secrets. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadSecrets();
   }, []);
-
-  const loadSecrets = async () => {
-    try {
-      const fetchedSecrets = await getSecrets();
-      setSecrets(fetchedSecrets);
-    } catch (err) {
-      console.error('Failed to load secrets:', err);
-    }
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -199,12 +260,23 @@ export default function SecretsListPage() {
       await loadSecrets();
     } catch (err) {
       console.error('Failed to create secret:', err);
+      setError('Failed to create secret. Please try again.');
     }
   };
 
   const handleViewSecret = (secret) => {
     setSelectedSecret(secret);
     setIsViewDialogOpen(true);
+  };
+
+  const handleShare = async (secretId, shareData) => {
+    try {
+      await shareSecret(secretId, shareData);
+      await loadSecrets();
+    } catch (err) {
+      console.error('Failed to share secret:', err);
+      setError('Failed to share secret. Please try again.');
+    }
   };
 
   const handleDeleteSecret = async () => {
@@ -215,8 +287,35 @@ export default function SecretsListPage() {
       await loadSecrets();
     } catch (err) {
       console.error('Failed to delete secret:', err);
+      setError('Failed to delete secret. Please try again.');
     }
   };
+
+  const renderSecretCard = (secret) => (
+    <Card key={secret.id}>
+      <CardContent className="flex items-center justify-between p-6">
+        <div className="flex items-center space-x-4">
+          <LockIcon className="h-6 w-6 text-muted-foreground" />
+          <div>
+            <div className="flex items-center space-x-2">
+              <h3 className="font-semibold">{secret.title}</h3>
+              {secret.is_shared && (
+                <span className="text-xs bg-secondary text-secondary-foreground px-2 py-1 rounded-full">
+                  {secret.share_with_all ? "Shared with all" : "Shared"}
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {secret.description || 'No description'}
+            </p>
+          </div>
+        </div>
+        <Button variant="outline" onClick={() => handleViewSecret(secret)}>
+          View
+        </Button>
+      </CardContent>
+    </Card>
+  );
 
   return (
     <div className="min-h-screen bg-background p-4">
@@ -263,7 +362,14 @@ export default function SecretsListPage() {
                   />
                 </div>
                 <Button type="submit" disabled={isLoading}>
-                  {isLoading ? 'Creating...' : 'Create Secret'}
+                  {isLoading ? (
+                    <>
+                      <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    'Create Secret'
+                  )}
                 </Button>
               </form>
             </DialogContent>
@@ -276,26 +382,20 @@ export default function SecretsListPage() {
           </Alert>
         )}
 
-        <div className="grid gap-4">
-          {secrets.map((secret) => (
-            <Card key={secret.id}>
-              <CardContent className="flex items-center justify-between p-6">
-                <div className="flex items-center space-x-4">
-                  <LockIcon className="h-6 w-6 text-muted-foreground" />
-                  <div>
-                    <h3 className="font-semibold">{secret.title}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {secret.description || 'No description'}
-                    </p>
-                  </div>
-                </div>
-                <Button variant="outline" onClick={() => handleViewSecret(secret)}>
-                  View
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        {isLoading ? (
+          <div className="flex items-center justify-center p-8">
+            <Loader2Icon className="mr-2 h-6 w-6 animate-spin" />
+            <span>Loading secrets...</span>
+          </div>
+        ) : secrets.length === 0 ? (
+          <div className="text-center p-8 text-muted-foreground">
+            No secrets found. Click -Add Secret- to create one.
+          </div>
+        ) : (
+          <div className="grid gap-4">
+            {secrets.map(renderSecretCard)}
+          </div>
+        )}
 
         {selectedSecret && (
           <SecretViewDialog
@@ -303,6 +403,7 @@ export default function SecretsListPage() {
             open={isViewDialogOpen}
             onOpenChange={setIsViewDialogOpen}
             onDelete={handleDeleteSecret}
+            onShare={(shareData) => handleShare(selectedSecret.id, shareData)}
           />
         )}
       </div>

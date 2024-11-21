@@ -3,6 +3,8 @@ from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey, DateT
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
+from app.core.roles import RoleLevel  # Add this import
+
 
 class User(Base):
     __tablename__ = "users"
@@ -32,6 +34,21 @@ class Role(Base):
     level = Column(Integer, nullable=False, unique=True)
     description = Column(String)
 
+class SecretShare(Base):
+    __tablename__ = "secret_shares"
+
+    id = Column(Integer, primary_key=True, index=True)
+    secret_id = Column(Integer, ForeignKey("secrets.id", ondelete="CASCADE"))
+    shared_with_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_by_user_id = Column(Integer, ForeignKey("users.id"))
+
+    # Relationships
+    secret = relationship("Secret", back_populates="shares")
+    shared_with_user = relationship("User", foreign_keys=[shared_with_user_id])
+    created_by = relationship("User", foreign_keys=[created_by_user_id])
+
+# Update the Secret model to add relationship
 class Secret(Base):
     __tablename__ = "secrets"
 
@@ -43,6 +60,23 @@ class Secret(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     is_password = Column(Boolean, default=True)
+    is_shared = Column(Boolean, default=False)
+    share_with_all = Column(Boolean, default=False)
 
     # Relationships
     creator = relationship("User", back_populates="secrets")
+    shares = relationship("SecretShare", back_populates="secret", cascade="all, delete-orphan")
+
+    def can_access(self, user: User) -> bool:
+        """Check if a user can access this secret"""
+        # Owner and creator always have access
+        if user.role_level == RoleLevel.OWNER or user.id == self.created_by_user_id:
+            return True
+            
+        # If shared with all, check role hierarchy
+        if self.share_with_all:
+            secret_owner = self.creator
+            return user.role_level <= secret_owner.role_level
+            
+        # Check explicit shares
+        return any(share.shared_with_user_id == user.id for share in self.shares)

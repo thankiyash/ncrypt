@@ -9,9 +9,7 @@ export const API_ROUTES = {
   // Secrets routes
   SECRETS: `${API_BASE}/secrets`,
   SECRET: (id) => `${API_BASE}/secrets/${id}`,
-  
-  
-  // Add this new route
+  SHARED_SECRETS: `${API_BASE}/secrets/shared-with-me`,
   CHECK_OWNER: `${API_BASE}/users/check-owner`,
   TEAM_MEMBERS: `${API_BASE}/users/team-members`,
   INVITE_MEMBER: `${API_BASE}/users/invite`,

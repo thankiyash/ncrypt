@@ -1,40 +1,57 @@
-version: '3.8'
+version: "3.8"
 
 services:
   api:
-    build: 
+    build:
       context: ./backend
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
     volumes:
-      - ./backend/app:/backend/app
+      - ./backend:/backend
+      - /backend/venv # Exclude the virtual environment directory if it exists
+      - /backend/__pycache__
+      - /backend/**/__pycache__
     environment:
       # API Settings
       - API_V1_STR=/api/v1
       - PROJECT_NAME=Password Manager API
       - ENVIRONMENT=development
-      
+
       # Database Settings
       - POSTGRES_USER=${POSTGRES_USER:-user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
-      - POSTGRES_HOST=db  # Using service name for docker network
+      - POSTGRES_HOST=db # Using service name for docker network
       - POSTGRES_PORT=5432
       - POSTGRES_DB=${POSTGRES_DB:-password_manager}
-      
+
       # JWT Settings
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key}
       - JWT_ALGORITHM=HS256
       - ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+      # Email Settings (for future use)
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-noreply@example.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
     depends_on:
       - db
     networks:
       - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   db:
     image: postgres:15
     volumes:
-      - ./db/data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
@@ -43,6 +60,21 @@ services:
       - "5432:5432"
     networks:
       - app-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-user} -d ${POSTGRES_DB:-password_manager}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  postgres_data:
+    name: password_manager_postgres_data
 
 networks:
   app-network:

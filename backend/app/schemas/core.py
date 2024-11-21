@@ -1,6 +1,6 @@
 # backend/app/schemas/core.py
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, Annotated
+from typing import Optional, Annotated, List
 from datetime import datetime
 from pydantic.types import StringConstraints
 
@@ -104,5 +104,53 @@ class TeamMemberResponse(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime]
     
+    class Config:
+        from_attributes = True
+
+class SecretShare(BaseModel):
+    user_id: int
+    email: Optional[str] = None  # For response only
+
+    class Config:
+        from_attributes = True
+
+class SecretShareCreate(BaseModel):
+    shared_with_user_ids: List[int]
+    share_with_all: bool = False
+
+class SecretShareResponse(BaseModel):
+    id: int
+    secret_id: int
+    shared_with_user_id: int
+    shared_with_user_email: str
+    created_at: datetime
+    created_by_user_id: int
+
+    class Config:
+        from_attributes = True
+
+
+# Update SecretCreate and SecretResponse
+class SecretCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    client_encrypted_data: str
+    is_password: bool = True
+    share_with_all: bool = False
+    shared_with_user_ids: Optional[List[int]] = None
+
+class SecretResponse(BaseModel):
+    id: int
+    title: str
+    description: Optional[str] = None
+    client_encrypted_data: str  # This field is required
+    created_by_user_id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    is_password: bool
+    is_shared: bool
+    share_with_all: bool
+    shares: List[SecretShareResponse] = []
+
     class Config:
         from_attributes = True
