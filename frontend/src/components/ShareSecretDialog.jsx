@@ -1,5 +1,4 @@
-// src/components/ShareSecretDialog.jsx
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,49 +17,68 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useTeamMembers } from "@/hooks/auth/use-team-members";
 import { Users2Icon } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+
+// Define all available role levels
+const ROLE_LEVELS = [
+  { value: 1, label: "Intern" },
+  { value: 2, label: "Junior" },
+  { value: 3, label: "Senior" },
+  { value: 4, label: "Manager" },
+  { value: 5, label: "Director" },
+  { value: 6, label: "Exec" },
+  { value: 7, label: "Owner" }
+];
 
 function ShareSecretDialog({ 
-  secret,
   isOpen,
   onOpenChange,
-  onShare,
-  currentUserRoleLevel
+  onShare
 }) {
-  const { getTeamMembers, isLoading, error } = useTeamMembers();
-  const [teamMembers, setTeamMembers] = useState([]);
-  const [selectedUsers, setSelectedUsers] = useState([]);
+  const [error, setError] = useState(null);
   const [shareWithAll, setShareWithAll] = useState(false);
+  const [selectedRoles, setSelectedRoles] = useState([]);
 
-  useEffect(() => {
-    const loadTeamMembers = async () => {
-      try {
-        const members = await getTeamMembers();
-        const filteredMembers = members.filter(member => 
-          member.id !== secret.created_by_user_id &&
-          member.role_level >= currentUserRoleLevel
-        );
-        setTeamMembers(filteredMembers);
-      } catch (err) {
-        console.error("Failed to load team members:", err);
-      }
-    };
-
-    if (isOpen) {
-      loadTeamMembers();
+  const handleRoleSelect = (value) => {
+    const roleLevel = parseInt(value);
+    if (!selectedRoles.includes(roleLevel)) {
+      setSelectedRoles(prev => [...prev, roleLevel]);
     }
-  }, [isOpen, secret, currentUserRoleLevel]);
+  };
+
+  const removeRole = (roleLevel) => {
+    setSelectedRoles(prev => prev.filter(level => level !== roleLevel));
+  };
 
   const handleShare = async () => {
     try {
+      if (!shareWithAll && selectedRoles.length === 0) {
+        setError("Please select at least one role or share with all");
+        return;
+      }
+
       await onShare({
-        shared_with_user_ids: selectedUsers,
-        share_with_all: shareWithAll
+        share_with_all: shareWithAll,
+        role_levels: !shareWithAll ? selectedRoles : null
       });
+
       onOpenChange(false);
     } catch (err) {
-      console.error("Failed to share secret:", err);
+      setError(err.message);
+    }
+  };
+
+  const getRoleBadgeColor = (roleLevel) => {
+    switch (roleLevel) {
+      case 7: return "default";    // Owner
+      case 6: return "destructive";  // Exec
+      case 5: return "secondary";    // Director
+      case 4: return "default";      // Manager
+      case 3: return "outline";      // Senior
+      case 2: return "secondary";    // Junior
+      case 1: return "outline";      // Intern
+      default: return "default";
     }
   };
 
@@ -82,52 +100,60 @@ function ShareSecretDialog({
             <Checkbox
               id="shareWithAll"
               checked={shareWithAll}
-              onCheckedChange={setShareWithAll}
+              onCheckedChange={(checked) => {
+                setShareWithAll(checked);
+                if (checked) {
+                  setSelectedRoles([]);
+                }
+              }}
             />
             <Label htmlFor="shareWithAll">
-              Share with all team members (respecting role hierarchy)
+              Share with all roles
             </Label>
           </div>
 
           {!shareWithAll && (
             <div className="space-y-2">
-              <Label>Select users to share with</Label>
-              <Select
-                onValueChange={(value) => setSelectedUsers(prev => [...prev, parseInt(value)])}
-              >
+              <Label>Select roles to share with</Label>
+              <Select onValueChange={handleRoleSelect}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select users" />
+                  <SelectValue placeholder="Select roles" />
                 </SelectTrigger>
                 <SelectContent>
-                  {teamMembers.map((member) => (
+                  {ROLE_LEVELS.map((role) => (
                     <SelectItem
-                      key={member.id}
-                      value={member.id.toString()}
-                      disabled={selectedUsers.includes(member.id)}
+                      key={role.value}
+                      value={role.value.toString()}
+                      disabled={selectedRoles.includes(role.value)}
                     >
-                      {member.email} ({member.first_name} {member.last_name})
+                      {role.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
 
-              {selectedUsers.length > 0 && (
+              {selectedRoles.length > 0 && (
                 <div className="mt-4">
-                  <Label>Selected Users:</Label>
-                  <div className="mt-2 space-y-2">
-                    {selectedUsers.map((userId) => {
-                      const member = teamMembers.find(m => m.id === userId);
+                  <Label>Selected Roles:</Label>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {selectedRoles.sort((a, b) => b - a).map((roleLevel) => {
+                      const role = ROLE_LEVELS.find(r => r.value === roleLevel);
                       return (
-                        <div key={userId} className="flex items-center justify-between bg-secondary p-2 rounded-md">
-                          <span>{member?.email}</span>
+                        <Badge
+                          key={roleLevel}
+                          variant={getRoleBadgeColor(roleLevel)}
+                          className="flex items-center gap-2"
+                        >
+                          {role?.label}
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => setSelectedUsers(prev => prev.filter(id => id !== userId))}
+                            className="h-4 w-4 p-0 hover:bg-transparent"
+                            onClick={() => removeRole(roleLevel)}
                           >
-                            Remove
+                            ×
                           </Button>
-                        </div>
+                        </Badge>
                       );
                     })}
                   </div>
@@ -146,7 +172,7 @@ function ShareSecretDialog({
           </Button>
           <Button
             onClick={handleShare}
-            disabled={isLoading || (!shareWithAll && selectedUsers.length === 0)}
+            disabled={!shareWithAll && selectedRoles.length === 0}
           >
             <Users2Icon className="mr-2 h-4 w-4" />
             Share Secret
@@ -158,16 +184,9 @@ function ShareSecretDialog({
 }
 
 ShareSecretDialog.propTypes = {
-  secret: PropTypes.shape({
-    id: PropTypes.number.isRequired,
-    title: PropTypes.string.isRequired,
-    created_by_user_id: PropTypes.number.isRequired,
-  }).isRequired,
   isOpen: PropTypes.bool.isRequired,
   onOpenChange: PropTypes.func.isRequired,
-  onShare: PropTypes.func.isRequired,
-  currentUserRoleLevel: PropTypes.number.isRequired
+  onShare: PropTypes.func.isRequired
 };
 
-// Add the default export
 export default ShareSecretDialog;

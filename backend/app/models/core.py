@@ -3,8 +3,7 @@ from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey, DateT
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
-from app.core.roles import RoleLevel  # Add this import
-
+from app.core.roles import RoleLevel
 
 class User(Base):
     __tablename__ = "users"
@@ -34,21 +33,6 @@ class Role(Base):
     level = Column(Integer, nullable=False, unique=True)
     description = Column(String)
 
-class SecretShare(Base):
-    __tablename__ = "secret_shares"
-
-    id = Column(Integer, primary_key=True, index=True)
-    secret_id = Column(Integer, ForeignKey("secrets.id", ondelete="CASCADE"))
-    shared_with_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    created_by_user_id = Column(Integer, ForeignKey("users.id"))
-
-    # Relationships
-    secret = relationship("Secret", back_populates="shares")
-    shared_with_user = relationship("User", foreign_keys=[shared_with_user_id])
-    created_by = relationship("User", foreign_keys=[created_by_user_id])
-
-# Update the Secret model to add relationship
 class Secret(Base):
     __tablename__ = "secrets"
 
@@ -62,10 +46,11 @@ class Secret(Base):
     is_password = Column(Boolean, default=True)
     is_shared = Column(Boolean, default=False)
     share_with_all = Column(Boolean, default=False)
+    min_role_level = Column(Integer, nullable=True)
 
     # Relationships
     creator = relationship("User", back_populates="secrets")
-    shares = relationship("SecretShare", back_populates="secret", cascade="all, delete-orphan")
+    role_shares = relationship("SecretRoleShare", back_populates="secret", cascade="all, delete-orphan")
 
     def can_access(self, user: User) -> bool:
         """Check if a user can access this secret"""
@@ -74,9 +59,21 @@ class Secret(Base):
             return True
             
         # If shared with all, check role hierarchy
-        if self.share_with_all:
-            secret_owner = self.creator
-            return user.role_level <= secret_owner.role_level
+        if self.share_with_all and self.min_role_level:
+            return user.role_level >= self.min_role_level
             
-        # Check explicit shares
-        return any(share.shared_with_user_id == user.id for share in self.shares)
+        # Check role-based shares
+        return any(share.role_level <= user.role_level for share in self.role_shares)
+
+class SecretRoleShare(Base):
+    __tablename__ = "secret_role_shares"
+
+    id = Column(Integer, primary_key=True, index=True)
+    secret_id = Column(Integer, ForeignKey("secrets.id", ondelete="CASCADE"))
+    role_level = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_by_user_id = Column(Integer, ForeignKey("users.id"))
+
+    # Relationships
+    secret = relationship("Secret", back_populates="role_shares")
+    created_by = relationship("User", foreign_keys=[created_by_user_id])

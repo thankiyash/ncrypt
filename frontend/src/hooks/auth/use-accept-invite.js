@@ -1,3 +1,4 @@
+// src/hooks/auth/use-accept-invite.js
 import { useState } from 'react';
 import { API_ROUTES } from '@/config/api-routes';
 import { apiRequest } from '@/utils/api-client';
@@ -20,10 +21,10 @@ export function useAcceptInvite() {
     setError(null);
 
     try {
-      // Derive master key from password
+      // Derive master key before accepting invite
       const masterKeyResult = await deriveMasterKeyFromPassword(password);
-      
-      // Hash password for authentication
+      sessionStorage.setItem('masterKey', JSON.stringify(masterKeyResult));
+
       const hashedPassword = await hashPassword(password);
 
       // Accept the invitation
@@ -50,9 +51,6 @@ export function useAcceptInvite() {
         body: formData.toString(),
       });
 
-      // Store master key
-      sessionStorage.setItem('masterKey', JSON.stringify(masterKeyResult));
-
       // Store auth data from login response
       const authData = {
         ...loginResponse,
@@ -64,6 +62,8 @@ export function useAcceptInvite() {
 
       return authData;
     } catch (err) {
+      // Clear master key if something fails
+      sessionStorage.removeItem('masterKey');
       setError(err.message);
       throw err;
     } finally {

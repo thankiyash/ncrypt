@@ -54,21 +54,17 @@ export function useSecrets() {
 
   const getSecrets = async () => {
     setIsLoading(true);
-    setError(null);
-
     try {
       const masterKeyData = JSON.parse(sessionStorage.getItem('masterKey'));
       if (!masterKeyData) {
         throw new Error('No master key found. Please login again.');
       }
 
-      const secrets = await apiRequest(API_ROUTES.SECRETS);
-
+      const secrets = await apiRequest(`${API_ROUTES.SECRETS}?include_shared=true`);
+      
       const decryptedSecrets = await Promise.all(secrets.map(async (secret) => {
         try {
           const encryptedData = JSON.parse(secret.client_encrypted_data);
-
-          // Decrypt using stored master key
           const decryptedData = await decryptData(
             encryptedData.encrypted,
             masterKeyData.key,

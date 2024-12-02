@@ -23,15 +23,15 @@ export function useLogin() {
     setError(null);
 
     try {
-      // Derive master key from password
+      // Derive master key and store it immediately
       const masterKeyResult = await deriveMasterKeyFromPassword(password);
+      sessionStorage.setItem('masterKey', JSON.stringify(masterKeyResult));
 
-      // Hash password for authentication
       const hashedPassword = await hashPassword(password);
 
       const formData = new URLSearchParams();
       formData.append('username', email);
-      formData.append('password', hashedPassword); // Send hashed password
+      formData.append('password', hashedPassword);
 
       const response = await apiRequest(API_ROUTES.LOGIN, {
         method: 'POST',
@@ -42,21 +42,20 @@ export function useLogin() {
         body: formData.toString(),
       });
 
-      // Store master key
-      sessionStorage.setItem('masterKey', JSON.stringify(masterKeyResult));
-
       // Store auth data
       const userData = {
         ...response,
         email,
       };
       storeAuthData(userData);
-
+      
       // Update auth context
       login(userData);
 
       return response;
     } catch (err) {
+      // Clear master key if login fails
+      sessionStorage.removeItem('masterKey');
       setError(err.message);
       throw err;
     } finally {

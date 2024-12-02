@@ -7,6 +7,56 @@ from pydantic.types import StringConstraints
 # Define password type with constraints
 PasswordStr = Annotated[str, StringConstraints(min_length=8)]
 
+class SecretCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    client_encrypted_data: str
+    is_password: bool = True
+
+class SecretUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    client_encrypted_data: Optional[str] = None
+    is_password: Optional[bool] = None
+
+class SecretRoleShare(BaseModel):
+    role_level: int
+
+    class Config:
+        from_attributes = True
+
+class SecretShareCreate(BaseModel):
+    share_with_all: bool = False
+    min_role_level: Optional[int] = None
+    role_levels: Optional[List[int]] = None
+
+class SecretRoleShareResponse(BaseModel):
+    id: int
+    secret_id: int
+    role_level: int
+    created_at: datetime
+    created_by_user_id: int
+
+    class Config:
+        from_attributes = True
+
+class SecretResponse(BaseModel):
+    id: int
+    title: str
+    description: Optional[str] = None
+    client_encrypted_data: str
+    created_by_user_id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    is_password: bool
+    is_shared: bool
+    share_with_all: bool
+    min_role_level: Optional[int] = None
+    role_shares: List[SecretRoleShareResponse] = []
+
+    class Config:
+        from_attributes = True
+
 # Base User Schema
 class UserBase(BaseModel):
     email: EmailStr
@@ -59,7 +109,7 @@ class UserInDB(UserBase):
     class Config:
         from_attributes = True
 
-# Schema for public user information (without sensitive data)
+# Schema for public user information
 class UserResponse(UserBase):
     id: int
     role_level: int
@@ -92,65 +142,3 @@ class RoleInfo(BaseModel):
     name: str
     level: int
     description: Optional[str] = None
-
-# Schema for team member list response
-class TeamMemberResponse(BaseModel):
-    id: int
-    email: EmailStr
-    first_name: Optional[str]
-    last_name: Optional[str]
-    role_level: int
-    is_active: bool
-    created_at: datetime
-    updated_at: Optional[datetime]
-    
-    class Config:
-        from_attributes = True
-
-class SecretShare(BaseModel):
-    user_id: int
-    email: Optional[str] = None  # For response only
-
-    class Config:
-        from_attributes = True
-
-class SecretShareCreate(BaseModel):
-    shared_with_user_ids: List[int]
-    share_with_all: bool = False
-
-class SecretShareResponse(BaseModel):
-    id: int
-    secret_id: int
-    shared_with_user_id: int
-    shared_with_user_email: str
-    created_at: datetime
-    created_by_user_id: int
-
-    class Config:
-        from_attributes = True
-
-
-# Update SecretCreate and SecretResponse
-class SecretCreate(BaseModel):
-    title: str
-    description: Optional[str] = None
-    client_encrypted_data: str
-    is_password: bool = True
-    share_with_all: bool = False
-    shared_with_user_ids: Optional[List[int]] = None
-
-class SecretResponse(BaseModel):
-    id: int
-    title: str
-    description: Optional[str] = None
-    client_encrypted_data: str  # This field is required
-    created_by_user_id: int
-    created_at: datetime
-    updated_at: Optional[datetime] = None
-    is_password: bool
-    is_shared: bool
-    share_with_all: bool
-    shares: List[SecretShareResponse] = []
-
-    class Config:
-        from_attributes = True

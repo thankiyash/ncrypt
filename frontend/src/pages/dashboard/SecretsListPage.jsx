@@ -23,6 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { 
   PlusCircle, 
   LockIcon, 
@@ -32,10 +33,20 @@ import {
   CheckIcon,
   Trash2Icon,
   Share2Icon,
-  Loader2Icon
+  Loader2Icon,
+  Users2Icon
 } from "lucide-react";
 import { useAuth, useSecrets } from "@/hooks/auth";
 import ShareSecretDialog from "@/components/ShareSecretDialog";
+
+const ROLE_LEVELS = [
+  { value: 1, label: "Intern" },
+  { value: 2, label: "Junior" },
+  { value: 3, label: "Senior" },
+  { value: 4, label: "Manager" },
+  { value: 5, label: "Director" },
+  { value: 6, label: "Exec" }
+];
 
 function SecretViewDialog({ secret, open, onOpenChange, onDelete, onShare }) {
   const [showPassword, setShowPassword] = useState(false);
@@ -64,7 +75,19 @@ function SecretViewDialog({ secret, open, onOpenChange, onDelete, onShare }) {
     onOpenChange(false);
   };
 
-  const canShare = user ;
+  const getRoleBadgeColor = (roleLevel) => {
+    switch (roleLevel) {
+      case 6: return "destructive";  // Exec
+      case 5: return "secondary";    // Director
+      case 4: return "default";      // Manager
+      case 3: return "outline";      // Senior
+      case 2: return "secondary";    // Junior
+      case 1: return "outline";      // Intern
+      default: return "default";
+    }
+  };
+
+  const canShare = true;
 
   return (
     <>
@@ -122,11 +145,31 @@ function SecretViewDialog({ secret, open, onOpenChange, onDelete, onShare }) {
             </div>
 
             {secret.is_shared && (
-              <div className="text-sm text-muted-foreground bg-secondary/50 p-2 rounded">
+              <div className="text-sm text-muted-foreground bg-secondary/50 p-2 rounded space-y-2">
                 {secret.share_with_all ? (
-                  <span>Shared with all team members</span>
+                  <div className="flex items-center gap-2">
+                    <Users2Icon className="h-4 w-4" />
+                    <span>
+                      Shared with all roles {secret.min_role_level ? `${ROLE_LEVELS.find(r => r.value === secret.min_role_level)?.label} and above` : ''}
+                    </span>
+                  </div>
                 ) : (
-                  <span>Shared with {secret.shares?.length || 0} team members</span>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Users2Icon className="h-4 w-4" />
+                      <span>Shared with roles:</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {secret.role_shares.map((share) => (
+                        <Badge
+                          key={share.id}
+                          variant={getRoleBadgeColor(share.role_level)}
+                        >
+                          {ROLE_LEVELS.find(r => r.value === share.role_level)?.label}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
             )}
@@ -195,10 +238,10 @@ SecretViewDialog.propTypes = {
     created_by_user_id: PropTypes.number.isRequired,
     is_shared: PropTypes.bool,
     share_with_all: PropTypes.bool,
-    shares: PropTypes.arrayOf(PropTypes.shape({
+    min_role_level: PropTypes.number,
+    role_shares: PropTypes.arrayOf(PropTypes.shape({
       id: PropTypes.number.isRequired,
-      shared_with_user_id: PropTypes.number.isRequired,
-      shared_with_user_email: PropTypes.string.isRequired
+      role_level: PropTypes.number.isRequired
     }))
   }).isRequired,
   open: PropTypes.bool.isRequired,
@@ -224,17 +267,8 @@ export default function SecretsListPage() {
   const loadSecrets = async () => {
     setIsLoading(true);
     try {
-      const [ownedSecrets, sharedSecrets] = await Promise.all([
-        getSecrets(),
-        getSharedSecrets()
-      ]);
-
-      const combinedSecrets = [...ownedSecrets, ...sharedSecrets];
-      const uniqueSecrets = Array.from(
-        new Map(combinedSecrets.map(secret => [secret.id, secret])).values()
-      );
-      
-      const sortedSecrets = uniqueSecrets.sort((a, b) => 
+      const secrets = await getSecrets();
+      const sortedSecrets = secrets.sort((a, b) => 
         new Date(b.created_at) - new Date(a.created_at)
       );
 
@@ -246,6 +280,10 @@ export default function SecretsListPage() {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadSecrets();
+  }, []);
 
   useEffect(() => {
     loadSecrets();
@@ -300,9 +338,10 @@ export default function SecretsListPage() {
             <div className="flex items-center space-x-2">
               <h3 className="font-semibold">{secret.title}</h3>
               {secret.is_shared && (
-                <span className="text-xs bg-secondary text-secondary-foreground px-2 py-1 rounded-full">
-                  {secret.share_with_all ? "Shared with all" : "Shared"}
-                </span>
+                <Badge variant="secondary" className="flex items-center gap-1">
+                  <Users2Icon className="h-3 w-3" />
+                  {secret.share_with_all ? "Shared with all" : "Role shared"}
+                </Badge>
               )}
             </div>
             <p className="text-sm text-muted-foreground">
@@ -367,8 +406,7 @@ export default function SecretsListPage() {
                       <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
                       Creating...
                     </>
-                  ) : (
-                    'Create Secret'
+                  ) : ('Create Secret'
                   )}
                 </Button>
               </form>
@@ -389,7 +427,7 @@ export default function SecretsListPage() {
           </div>
         ) : secrets.length === 0 ? (
           <div className="text-center p-8 text-muted-foreground">
-            No secrets found. Click -Add Secret- to create one.
+            No secrets found. Click &quot;Add Secret&quot; to create one.
           </div>
         ) : (
           <div className="grid gap-4">
